@@ -4,6 +4,8 @@ const bcrypt = require("bcrypt");
 const nodemailer = require("nodemailer");
 const dotenv = require("dotenv");
 const otpGenerator = require("otp-generator");
+const uuid = require('uuid');
+
 
 dotenv.config();
 
@@ -154,7 +156,7 @@ const resendOtp = async (req, res) => {
       console.log("New OTP deleted after one minute.");
     }, 12000); // 12000 milliseconds = 2 minute
 
-    // Rest of your email sending logic...
+
     const senderEmail = process.env.SENDER_EMAIL;
     const recipientEmail = email;
     const smtpConfig = {
@@ -216,4 +218,59 @@ const getNews = async (req, res) => {
   }
 };
 
-module.exports = { postNews, getNews, signUp, login, verify, resendOtp };
+const forgotPassword = async (req, res) => {
+  try {
+    const {email} = req.body;
+
+    const user = await User.findOne({ email });
+
+    if (!user) {
+      return res.status(400).json({ message: "User not found" });
+    }
+// Generate a unique reset token and set expiry time (e.g., 10 minutes)
+const resetToken = uuid.v4();
+const resetTokenExpiry = new Date();
+resetTokenExpiry.setMinutes(resetTokenExpiry.getMinutes() + 10);
+
+//update user with reset token
+user.resetToken = resetToken;
+user.resetTokenExpiry = resetTokenExpiry;
+await user.save();
+
+const senderEmail = process.env.SENDER_EMAIL;
+    const recipientEmail = email;
+    const smtpConfig = {
+      host: "smtp.gmail.com",
+      port: 587,
+      secure: false, // true for 465, false for other ports
+      auth: {
+        user: process.env.SENDER_EMAIL, // Your email address
+        pass: process.env.PASSWORD, // Your email password or app-specific password
+      },
+    };
+
+    const transporter = nodemailer.createTransport(smtpConfig);
+
+    const resetLink = `http://localhost:${PORT}/reset-password/${resetToken}`;
+    const mailOptions = {
+      from: senderEmail,
+      to: recipientEmail,
+      subject: "Reset Password",
+      text: `Hello, this is your link to reset your password ${resetLink}`,
+    };
+
+    transporter.sendMail(mailOptions, (error, info) => {
+      if (error) {
+        return console.log("Error:", error.message);
+      }
+      console.log("Reset Password", info.response);
+    });
+
+    res.status(200).json({ message: "Reset link successfully", user });
+
+  } catch (error) {
+    
+  }
+}
+
+module.exports = { postNews, getNews, signUp, login, verify, resendOtp, forgotPassword };
