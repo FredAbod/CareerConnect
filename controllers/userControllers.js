@@ -4,8 +4,7 @@ const bcrypt = require("bcrypt");
 const nodemailer = require("nodemailer");
 const dotenv = require("dotenv");
 const otpGenerator = require("otp-generator");
-const uuid = require('uuid');
-
+const uuid = require("uuid");
 
 dotenv.config();
 
@@ -156,7 +155,6 @@ const resendOtp = async (req, res) => {
       console.log("New OTP deleted after one minute.");
     }, 12000); // 12000 milliseconds = 2 minute
 
-
     const senderEmail = process.env.SENDER_EMAIL;
     const recipientEmail = email;
     const smtpConfig = {
@@ -220,24 +218,24 @@ const getNews = async (req, res) => {
 
 const forgotPassword = async (req, res) => {
   try {
-    const {email} = req.body;
+    const { email } = req.body;
 
     const user = await User.findOne({ email });
 
     if (!user) {
       return res.status(400).json({ message: "User not found" });
     }
-// Generate a unique reset token and set expiry time (e.g., 10 minutes)
-const resetToken = uuid.v4();
-const resetTokenExpiry = new Date();
-resetTokenExpiry.setMinutes(resetTokenExpiry.getMinutes() + 10);
+    // Generate a unique reset token and set expiry time (e.g., 10 minutes)
+    const resetToken = uuid.v4();
+    const resetTokenExpiry = new Date();
+    resetTokenExpiry.setMinutes(resetTokenExpiry.getMinutes() + 10);
 
-//update user with reset token
-user.resetToken = resetToken;
-user.resetTokenExpiry = resetTokenExpiry;
-await user.save();
+    //update user with reset token
+    user.resetToken = resetToken;
+    user.resetTokenExpiry = resetTokenExpiry;
+    await user.save();
 
-const senderEmail = process.env.SENDER_EMAIL;
+    const senderEmail = process.env.SENDER_EMAIL;
     const recipientEmail = email;
     const smtpConfig = {
       host: "smtp.gmail.com",
@@ -267,10 +265,52 @@ const senderEmail = process.env.SENDER_EMAIL;
     });
 
     res.status(200).json({ message: "Reset link successfully", user });
-
   } catch (error) {
-    
+    res.status(500).json({ message: "Error Sending Reset Link", error });
   }
+};
+
+const resetPassword = async (req, res) => {
+  try {
+    const { token } = req.params;
+    const { newPassword, confirmPassword } = req.body;
+
+if(newPassword !== confirmPassword){
+  return res
+  .status(400)
+  .json({ message: "Password Does Not Match" });
 }
 
-module.exports = { postNews, getNews, signUp, login, verify, resendOtp, forgotPassword };
+    // Find user with the given reset token and within the expiry time
+    const user = await User.findOne({
+      resetToken: token,
+      resetTokenExpiry: { $gt: new Date() },
+    });
+    if (!user) {
+      return res
+        .status(400)
+        .json({ message: "Invalid or expired reset token" });
+    }
+    const hashedPassword = await bcrypt.hash(newPassword, 10);
+    user.password = hashedPassword;
+    user.resetToken = null;
+    user.resetTokenExpiry = null;
+    await user.save();
+    res.status(200).json({ message: "Password Reset Succesfull1y", user });
+
+  } catch (error) {
+    res.status(500).json({ message: "Error Resetting Password", error });
+
+  }
+};
+
+module.exports = {
+  postNews,
+  getNews,
+  signUp,
+  login,
+  verify,
+  resendOtp,
+  forgotPassword,
+  resetPassword
+};
