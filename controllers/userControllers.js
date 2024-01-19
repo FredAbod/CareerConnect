@@ -1,26 +1,27 @@
 const News = require("../models/news.models.js");
 const User = require("../models/user.models.js");
+const cloudinary = require("../image/cloudinary.js");
 const bcrypt = require("bcrypt");
 const nodemailer = require("nodemailer");
 const dotenv = require("dotenv");
 const otpGenerator = require("otp-generator");
 const uuid = require("uuid");
+const jwt = require("jsonwebtoken");
+
+const { errorResMsg, successResMsg } = require("../lib/response.js");
 
 dotenv.config();
 
 //?: User
 const signUp = async (req, res) => {
+  const { userName, password, email } = req.body;
+  if (!userName && !password && !email) {
+    return errorResMsg(res, 500, "Please input username, password and email");
+  }
   try {
-    const { userName, password, email } = req.body;
-    if (!userName && !password && !email) {
-      return res
-        .status(400)
-        .json({ message: "Please input username, password and email" });
-    }
-
     const existingUser = await User.findOne({ email });
     if (existingUser) {
-      return res.status(400).json({ message: "User Already Exist" });
+      return errorResMsg(res, 500, "User Already exists");
     }
     // Generate a 6-digit OTP
     const otp = otpGenerator.generate(6, {
@@ -29,11 +30,20 @@ const signUp = async (req, res) => {
       specialChars: false,
       alphabets: false,
     });
+
     //? Password
     const hashedPassword = await bcrypt.hash(password, 10);
-    const user = new User({ userName, password: hashedPassword, email, otp });
+    const user = new User({
+      userName,
+      password: hashedPassword,
+      email,
+      otp,
+    });
     await user.save();
-
+    //Generate JWT Token
+    const token = jwt.sign({ userId: user._id }, process.env.SECRETKEY, {
+      expiresIn: "10h",
+    });
     // Set a timeout to delete the OTP after one minute
     setTimeout(async () => {
       // Remove OTP from the user document
@@ -74,8 +84,9 @@ const signUp = async (req, res) => {
       console.log("Email sent:", info.response);
     });
 
-    res.status(201).json({ message: "User created Succesfully", user: user });
+    return successResMsg(res, 201, { data: user, token });
   } catch (error) {
+    console.log(error);
     res.status(500).json({ message: "Error Registering User", error: error });
   }
 };
@@ -119,9 +130,39 @@ const login = async (req, res) => {
     if (!isMatch) {
       return res.status(400).json({ message: "Password does not match" });
     }
-    res.status(200).json({ message: "User logged in", user: user });
+
+    const token = jwt.sign({ userId: user._id }, process.env.SECRETKEY, {
+      expiresIn: "10h",
+    });
+    res.status(200).json({ message: "User logged in", user: user, token });
   } catch (error) {
     res.status(500).json({ message: "Error logging in", error: error });
+  }
+};
+
+//upload Profile Picture
+const uploadPicture = async (req, res) => {
+  try {
+    const user = await User.findOne({ _id: req.params.id });
+    if (!user) {
+      return errorResMsg(res, 400, "User not found");
+    }
+    const result = await cloudinary.v2.uploader.upload(req.file.path);
+    const updateUser = await User.findByIdAndUpdate(
+      {
+        _id: req.params.id,
+      },
+      { profilePic: result.secure_url },
+      {
+        isNew: true,
+      }
+    );
+    return successResMsg(res, 200, { data: updateUser });
+  } catch (error) {
+    console.log(error);
+    return errorResMsg(res, 500, error.message, {
+      message: "internal server error",
+    });
   }
 };
 
@@ -192,10 +233,18 @@ const resendOtp = async (req, res) => {
 
 const postNews = async (req, res) => {
   try {
+    const { userId } = req.decoded;
+    const user = await User.findById(userId);
+    if (user.role !== "admin") {
+      return errorResMsg(res, 401, "You are UnAuthorized");
+    }
     const { headline, body, userName, robot } = req.body;
+    const result = await cloudinary.v2.uploader.upload(req.file.path);
+
     const article = new News({
       headline,
       body,
+      image: result.secure_url,
       robot,
     });
     await article.save();
@@ -275,11 +324,9 @@ const resetPassword = async (req, res) => {
     const { token } = req.params;
     const { newPassword, confirmPassword } = req.body;
 
-if(newPassword !== confirmPassword){
-  return res
-  .status(400)
-  .json({ message: "Password Does Not Match" });
-}
+    if (newPassword !== confirmPassword) {
+      return res.status(400).json({ message: "Password Does Not Match" });
+    }
 
     // Find user with the given reset token and within the expiry time
     const user = await User.findOne({
@@ -297,10 +344,8 @@ if(newPassword !== confirmPassword){
     user.resetTokenExpiry = null;
     await user.save();
     res.status(200).json({ message: "Password Reset Succesfull1y", user });
-
   } catch (error) {
     res.status(500).json({ message: "Error Resetting Password", error });
-
   }
 };
 
@@ -312,5 +357,6 @@ module.exports = {
   verify,
   resendOtp,
   forgotPassword,
-  resetPassword
+  resetPassword,
+  uploadPicture,
 };
