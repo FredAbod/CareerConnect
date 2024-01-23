@@ -6,6 +6,7 @@ const rateLimit = require('express-rate-limit');
 const cors = require("cors");
 const connectDB = require("./config/db");
 const userRouter = require('./routes/user.Routes')
+const adminRouter = require('./routes/admin.routes')
 
 dotenv.config();
 PORT = process.env.PORT || 3000;
@@ -26,6 +27,7 @@ app.use(limiter);
 
 
 app.use('/api/user/v1', userRouter)
+app.use('/api/admin/v1', adminRouter)
 
 connectDB();
 

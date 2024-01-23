@@ -349,6 +349,39 @@ const resetPassword = async (req, res) => {
   }
 };
 
+const updateProfile = async (req, res) => {
+  try {
+    const { userId } = req.decoded;
+    const { userName, email } = req.body;
+
+    const newUser = await User.findByIdAndUpdate(
+      {
+        _id: userId,
+      },
+      { userName: userName, email: email },
+      { isNew: true }
+    );
+    return successResMsg(res, 200, {
+      message: "User Profile Updated Successfully",
+      newUser,
+    });
+  } catch (error) {
+    return errorResMsg(error, 500, { message: "User Profile Not Updated" });
+  }
+};
+
+const deleteUser = async(req, res) => {
+try {
+  const { userId} = req.decoded;
+  const deletedUser = await User.findByIdAndDelete({_id: userId});
+  return successResMsg(res, 200, { message: "User deleted successfully", deletedUser})
+} catch (error) {
+  console.log(error);
+  return errorResMsg(res, 500, { message: "User Not Deleted" });
+
+}
+}
+
 module.exports = {
   postNews,
   getNews,
@@ -359,4 +392,6 @@ module.exports = {
   forgotPassword,
   resetPassword,
   uploadPicture,
+  updateProfile,
+  deleteUser,
 };
